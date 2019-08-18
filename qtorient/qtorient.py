@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 
-import signal
-import sys
 
 from glob import glob
 import logging
 import os
 from subprocess import check_call, check_output, Popen
+import sys
 
-from PyQt5.QtCore import pyqtSlot, QObject, QCoreApplication, QTimer
+from PyQt5.QtCore import pyqtSlot, QObject, QTimer
 from PyQt5.QtDBus import QDBusAbstractAdaptor, QDBusConnection
+from PyQt5.QtWidgets import QSystemTrayIcon, QApplication, QMenu, QAction
+from PyQt5.QtGui import QIcon
 
+from qtorient.settings import OrientSettings
 
 # decide which messages to show
-LOG_LEVEL = logging.DEBUG
+LOG_LEVEL = logging.WARNING
 # log output to a file (set to None to use stdout)
 LOG_FILE = None
 # the name of the display to rotate (None for default/everything)
@@ -57,7 +59,7 @@ ORIENTATIONS = {
 }
 
 
-class CoreApp(QCoreApplication):
+class CoreApp(QApplication):
     """A subclass of QCoreApplication forces the python interpreter to run,
     which lets the signal handler run.
     """
@@ -68,11 +70,11 @@ class CoreApp(QCoreApplication):
                  pointers=POINTERS,
                  touchscreens=TOUCHSCREENS):
         super().__init__(args)
+        self._settings = None
         self._laptop = None
         self._input_devices = None
         # Logging
         logging.basicConfig(filename=LOG_FILE, level=LOG_LEVEL)
-
         # access to env (for making external calls)
         self.env = os.environ.copy()
         # access to various parameters
@@ -89,12 +91,52 @@ class CoreApp(QCoreApplication):
         self._read_fails_max = 100
         self.keyboard_pid = None
         self.orientation = 'normal'
+        self._accel = [0, 0]
+        self._incl = [0, 0, 0]
         interface = "se.ewpettersson.yoga"
         path = "/se/ewpettersson/yoga"
         method = "tabletmode"
         self.bus = QDBusConnection.systemBus()
         # signal is sent by dbus-send so empty service
         self.bus.connect('', path, interface, method, 'b', self.check_mode)
+        self._tray = QSystemTrayIcon(QIcon.fromTheme("input-tablet"), self)
+        self._tray.show()
+        self._tray.activated.connect(self.systray_clicked)
+        self.make_menu()
+        # Don't quit when settings window is closed
+        self.setQuitOnLastWindowClosed(False)
+        # Run event loop every POLL_INTERVAL seconds
+        self.startTimer(POLL_INTERVAL * 1000)
+
+    def systray_clicked(self, reason):
+        """Ignore context menu clicks (the menu pops up anyway as a context
+        menu is registered), otherwise show/hide settings.
+        """
+        if reason == QSystemTrayIcon.Context:
+            return
+        self.toggle_settings()
+
+    def make_menu(self):
+        """Make the systray menu.
+        """
+        self._menu = QMenu()
+        self._quit_action = QAction("Quit")
+        self._quit_action.triggered.connect(self.stop)
+        self._settings_action = QAction("Settings")
+        self._settings_action.triggered.connect(self.toggle_settings)
+        self._menu.addAction(self._settings_action)
+        self._menu.addAction(self._quit_action)
+        self._tray.setContextMenu(self._menu)
+
+    def toggle_settings(self):
+        """Show the settings dialog."""
+        if self._settings is not None:
+            self._settings.close()
+            self._settings = None
+        else:
+            self._settings = OrientSettings(self)
+            self._settings.set_incl(self._incl)
+            self._settings.set_accel(self._accel)
 
     @property
     def is_laptop(self):
@@ -105,7 +147,7 @@ class CoreApp(QCoreApplication):
             return True
         if self._laptop is False:
             return False
-        x, y, z = self.read_incl()
+        x, y = self._incl[0:2]
         # Always assume laptop mode if lid is closed, probably docked
         # TODO Configuration option for the below magic numbers
         if not self.is_lid_open() or ((-15 < x < 1) and (-5 < y < 4)):
@@ -167,7 +209,7 @@ class CoreApp(QCoreApplication):
     def verify_input_devices(self, devices):
         return tuple(set(devices) & self.input_devices)
 
-    def read_sensor_file(self, base_dir, fname):
+    def read_sensor(self, base_dir, fname):
         """Read a sensor file. Note that after suspending, we might be
         resetting the USB device, so we allow a small number of consecutive
         failures
@@ -189,20 +231,22 @@ class CoreApp(QCoreApplication):
             self._get_sensor_base_dirs()
         base_dir = self.incl_base_dir
         # multiply by 10 for better granularity
-        scale = self.read_sensor_file(base_dir, 'in_incli_scale') * 10
-        x = self.read_sensor_file(base_dir, 'in_incli_x_raw') * scale
-        y = self.read_sensor_file(base_dir, 'in_incli_y_raw') * scale
-        z = self.read_sensor_file(base_dir, 'in_incli_z_raw') * scale
-        return x, y, z
+        scale = self.read_sensor(base_dir, 'in_incli_scale') * 10
+        self._incl = [self.read_sensor(base_dir, 'in_incli_x_raw') * scale,
+                      self.read_sensor(base_dir, 'in_incli_y_raw') * scale,
+                      self.read_sensor(base_dir, 'in_incli_z_raw') * scale]
+        if self._settings:
+            self._settings.set_incl(self._incl)
 
     def read_accel(self):
         if not self.accel_base_dir:
             self._get_sensor_base_dirs()
         base_dir = self.accel_base_dir
-        scale = self.read_sensor_file(base_dir, 'in_accel_scale')
-        x = self.read_sensor_file(base_dir, 'in_accel_x_raw') * scale
-        y = self.read_sensor_file(base_dir, 'in_accel_y_raw') * scale
-        return x, y
+        scale = self.read_sensor(base_dir, 'in_accel_scale')
+        self._accel = [self.read_sensor(base_dir, 'in_accel_x_raw') * scale,
+                       self.read_sensor(base_dir, 'in_accel_y_raw') * scale]
+        if self._settings:
+            self._settings.set_accel(self._accel)
 
     def rotate_screen(self, orientation):
         os.system('xrandr --output %s --rotate %s' % (self.output,
@@ -227,7 +271,7 @@ class CoreApp(QCoreApplication):
             self.kill_keyboard()
 
     def get_orientation(self):
-        x, y = self.read_accel()
+        x, y = self._accel
         # use the axis with the highest offset
         if abs(x) > abs(y):
             if x <= -GRAVITY_THRESHOLD:
@@ -270,27 +314,18 @@ class CoreApp(QCoreApplication):
     def event(self, e):
         """Force events to run in python interpreter, which lets signal handler run
         """
+        self.read_incl()
+        self.read_accel()
         logging.debug("[State: %s] "
                       "[Incl X: % 6.2f, Y: % 6.2f, Z: % 6.2f] "
                       "[Accel X: % 6.2f, Y: % 6.2f]",
                       "laptop" if self.is_laptop else "tablet",
-                      *(self.read_incl() + self.read_accel()))
+                      *(self._incl + self._accel))
         orientation = 'normal'
         if not self.is_laptop:
             orientation = self.get_orientation()
         if orientation != self.orientation:
             self.orientation = orientation
             self.set_orientation(self.orientation)
-        return QCoreApplication.event(self, e)
+        return QApplication.event(self, e)
 
-
-def main():
-    """Do stuff."""
-    app = CoreApp(sys.argv)
-    signal.signal(signal.SIGINT, lambda *a: app.stop())
-    app.startTimer(POLL_INTERVAL * 1000)
-    sys.exit(app.exec_())
-
-
-if __name__ == "__main__":
-    main()
