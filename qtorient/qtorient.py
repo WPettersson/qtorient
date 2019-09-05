@@ -266,10 +266,6 @@ class CoreApp(QApplication):
         if self._settings:
             self._settings.set_accel(self._accel)
 
-    def rotate_screen(self, orientation):
-        os.system('xrandr --output %s --rotate %s' % (self.output,
-                                                      orientation))
-
     def set_mode(self, is_laptop):
         """
         i.e. laptop or tablet
@@ -345,7 +341,7 @@ class CoreApp(QApplication):
             self.keyboard_pid = None
 
     def event(self, e):
-        """Force events to run in python interpreter, which lets signal handler run
+        """Timer has fired, so check for changes
         """
         self.read_incl()
         self.read_accel()
