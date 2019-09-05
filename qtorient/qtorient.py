@@ -91,6 +91,7 @@ class CoreApp(QApplication):
         self._read_fails_max = 100
         self.keyboard_pid = None
         self.orientation = 'normal'
+        self._poll_interval = POLL_INTERVAL
         self._accel = [0, 0]
         self._incl = [0, 0, 0]
         interface = "se.ewpettersson.yoga"
@@ -106,7 +107,24 @@ class CoreApp(QApplication):
         # Don't quit when settings window is closed
         self.setQuitOnLastWindowClosed(False)
         # Run event loop every POLL_INTERVAL seconds
-        self.startTimer(POLL_INTERVAL * 1000)
+        self._timer = self.startTimer(self._poll_interval * 1000)
+
+    @property
+    def poll_interval(self):
+        """Get the current polling interval (in milliseconds)"""
+        return self._poll_interval
+
+    @poll_interval.setter
+    def poll_interval(self, value):
+        """Set the polling interval (in milliseconds)
+        """
+        if value < 1:
+            raise Exception("Polling interval must be positive")
+        self._poll_interval = value
+        if self._timer:
+            self.killTimer(self._timer)
+        self._timer = self.startTimer(self._poll_interval * 1000)
+        logging.debug('Poll interval set to %d', self._poll_interval)
 
     def systray_clicked(self, reason):
         """Ignore context menu clicks (the menu pops up anyway as a context

@@ -10,10 +10,18 @@ class OrientSettings(QWidget):
         self.ui = Ui_qtorient()
         self.ui.setupUi(self)
         self.ui.buttonBox.clicked.connect(self.buttonPress)
+        self.ui.pollEdit.setText(f"{self.parent.poll_interval}")
         self.show()
 
     def buttonPress(self, button):
         """A button is pressed in the button box."""
+        try:
+            poll_interval = int(self.ui.pollEdit.text())
+            if poll_interval > 0:
+                self.parent.poll_interval = poll_interval
+        except ValueError:
+            # Ignore if not integer
+            pass
         self.parent.toggle_settings()
 
     def set_accel(self, accel):
@@ -28,3 +36,4 @@ class OrientSettings(QWidget):
         self.ui.incl_x.setText(f"{incl[0]:.2f}")
         self.ui.incl_y.setText(f"{incl[1]:.2f}")
         self.ui.incl_z.setText(f"{incl[2]:.2f}")
+
