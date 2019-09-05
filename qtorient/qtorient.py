@@ -90,7 +90,7 @@ class CoreApp(QApplication):
         self._read_fails = 0
         self._read_fails_max = 100
         self.keyboard_pid = None
-        self.orientation = 'normal'
+        self._orientation = 'normal'
         self._poll_interval = POLL_INTERVAL
         self._accel = [0, 0]
         self._incl = [0, 0, 0]
@@ -209,7 +209,6 @@ class CoreApp(QApplication):
         # revert back to normal orientation
         if self.orientation != 'normal':
             self.orientation = 'normal'
-            self.set_orientation(self.orientation)
         # kill on-screen keyboard if it's still running
         self.kill_keyboard()
         self.quit()
@@ -304,6 +303,14 @@ class CoreApp(QApplication):
         # if thresholds not exceeded, stay where we are
         return self.orientation
 
+    @property
+    def orientation(self):
+        """The orientation of the device. One of "normal", "inverted", "left",
+        or "right"
+        """
+        return self._orientation
+
+    @orientation.setter
     def set_orientation(self, orientation):
         logging.info("set orientation: %s", orientation)
         # rotate the screen
@@ -344,6 +351,5 @@ class CoreApp(QApplication):
             orientation = self.get_orientation()
         if orientation != self.orientation:
             self.orientation = orientation
-            self.set_orientation(self.orientation)
         return QApplication.event(self, e)
 
