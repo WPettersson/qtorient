@@ -20,9 +20,11 @@ class OrientSettings(QWidget):
         """Add entries to dropdowns for mode and orientation."""
         for mode in ["Laptop (auto)", "Tablet (auto)"]:
             self.ui.modeBox.addItem(mode)
+        self.ui.modeBox.setEnabled(False)
         for orient in ["Normal (auto)", "Left (auto)", "Right (auto)",
                        "Invert (auto)"]:
             self.ui.orientBox.addItem(orient)
+        self.ui.orientBox.setEnabled(False)
 
     def buttonPress(self, button):
         """A button is pressed in the button box
