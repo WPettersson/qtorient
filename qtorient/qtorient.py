@@ -155,6 +155,8 @@ class CoreApp(QApplication):
             self._settings = OrientSettings(self)
             self._settings.set_incl(self._incl)
             self._settings.set_accel(self._accel)
+            self._settings.set_mode(self.is_laptop)
+            self._settings.set_orientation(self.orientation)
 
     @property
     def is_laptop(self):
@@ -207,8 +209,7 @@ class CoreApp(QApplication):
             self._laptop = True
             self.set_mode(self._laptop)
         # revert back to normal orientation
-        if self.orientation != 'normal':
-            self.orientation = 'normal'
+        self.orientation = 'normal'
         # kill on-screen keyboard if it's still running
         self.kill_keyboard()
         self.quit()
@@ -281,6 +282,8 @@ class CoreApp(QApplication):
                        env=self.env)
         for pointer in self.pointers:
             check_call(['xinput', func, 'pointer:%s' % pointer], env=self.env)
+        if self._settings:
+            self._settings.set_mode(is_laptop)
         # show/hide onscreen keyboard
         if not is_laptop:
             self.launch_keyboard()
@@ -311,7 +314,9 @@ class CoreApp(QApplication):
         return self._orientation
 
     @orientation.setter
-    def set_orientation(self, orientation):
+    def orientation(self, orientation):
+        if orientation == self._orientation:
+            return
         logging.info("set orientation: %s", orientation)
         # rotate the screen
         check_call(['xrandr', '--output', self.output, '--rotate',
@@ -323,6 +328,9 @@ class CoreApp(QApplication):
                         'Coordinate Transformation Matrix', ] +
                        [str(n) for n in matrix],
                        env=self.env)
+        self._orientation = orientation
+        if self._settings:
+            self._settings.set_orientation(orientation)
 
     def launch_keyboard(self):
         if not KEYBOARD_CMD:
@@ -349,7 +357,5 @@ class CoreApp(QApplication):
         orientation = 'normal'
         if not self.is_laptop:
             orientation = self.get_orientation()
-        if orientation != self.orientation:
-            self.orientation = orientation
+        self.orientation = orientation
         return QApplication.event(self, e)
-
