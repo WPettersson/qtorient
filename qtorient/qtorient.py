@@ -189,6 +189,12 @@ class CoreApp(QApplication):
             self.set_mode(self._laptop)
 
     def _get_sensor_base_dirs(self):
+        """Get the base directories for the sensors.
+        Note that this always discards existing information and re-enumerates
+        devices. This is important in case we suspend.
+        """
+        self.accel_base_dir = None
+        self.incl_base_dir = None
         for path in glob(SENSORS_PATH):
             with open(os.path.join(path, 'name')) as device:
                 name = device.read()
@@ -238,6 +244,8 @@ class CoreApp(QApplication):
                 return float(device.read())
         except FileNotFoundError as exception:
             self._read_fails += 1
+            # Update the sensor directories, incase they've changed
+            self._get_sensor_base_dirs()
             if self._read_fails > self._read_fails_max:
                 raise exception
             return 0.0
