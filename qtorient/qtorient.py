@@ -77,7 +77,7 @@ class CoreApp(QApplication):
         logging.basicConfig(filename=LOG_FILE, level=LOG_LEVEL)
         # access to env (for making external calls)
         self.env = os.environ.copy()
-        # access to various parameters
+        # Output display to rotate
         self.output = output
         # weed out any input devices that aren't actually available
         self.keyboards = self.verify_input_devices(keyboards)
@@ -90,6 +90,8 @@ class CoreApp(QApplication):
         self._read_fails = 0
         self._read_fails_max = 100
         self.keyboard_pid = None
+        self._forced = False
+        self._mode_forced = False
         self._orientation = 'normal'
         self._poll_interval = POLL_INTERVAL
         self._accel = [0, 0]
@@ -184,7 +186,7 @@ class CoreApp(QApplication):
     @pyqtSlot(bool)
     def check_mode(self, is_tablet):
         is_laptop = not is_tablet
-        if is_laptop != self._laptop:
+        if is_laptop != self._laptop and not self._mode_forced:
             self._laptop = is_laptop
             self.set_mode(self._laptop)
 
@@ -213,8 +215,10 @@ class CoreApp(QApplication):
         # revert back to laptop mode and restore all functionality
         if not self.is_laptop:
             self._laptop = True
+            self._mode_forced = False
             self.set_mode(self._laptop)
         # revert back to normal orientation
+        self._forced = False
         self.orientation = 'normal'
         # kill on-screen keyboard if it's still running
         self.kill_keyboard()
@@ -286,13 +290,24 @@ class CoreApp(QApplication):
                        env=self.env)
         for pointer in self.pointers:
             check_call(['xinput', func, 'pointer:%s' % pointer], env=self.env)
-        if self._settings:
+        if self._settings and not self._mode_forced:
             self._settings.set_mode(is_laptop)
         # show/hide onscreen keyboard
         if not is_laptop:
             self.launch_keyboard()
         else:
             self.kill_keyboard()
+
+    def force_mode(self, is_laptop):
+        """Force device to be either a tablet or a laptop
+        """
+        self._mode_forced = True
+        self.set_mode(is_laptop)
+
+    def unset_mode(self):
+        """Let the app control mode once again."""
+        self._mode_forced = False
+        self.set_mode(self.is_laptop)
 
     def get_orientation(self):
         x, y = self._accel
@@ -336,6 +351,17 @@ class CoreApp(QApplication):
         if self._settings:
             self._settings.set_orientation(orientation)
 
+    def force_orientation(self, orientation):
+        """Forces a given orientation, regardless of any sensors."""
+        self._forced = True
+        self.orientation = orientation
+
+    def unset_orientation(self):
+        """Let the app control orientation again."""
+        self._forced = False
+        if not self.is_laptop:
+            self.orientation = self.get_orientation()
+
     def launch_keyboard(self):
         if not KEYBOARD_CMD:
             return None
@@ -358,8 +384,9 @@ class CoreApp(QApplication):
                       "[Accel X: % 6.2f, Y: % 6.2f]",
                       "laptop" if self.is_laptop else "tablet",
                       *(self._incl + self._accel))
-        orientation = 'normal'
-        if not self.is_laptop:
-            orientation = self.get_orientation()
-        self.orientation = orientation
+        if not self._forced:
+            orientation = 'normal'
+            if not self.is_laptop:
+                orientation = self.get_orientation()
+            self.orientation = orientation
         return QApplication.event(self, e)
