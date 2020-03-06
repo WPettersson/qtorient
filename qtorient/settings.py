@@ -18,13 +18,26 @@ class OrientSettings(QWidget):
 
     def setup_dropdowns(self):
         """Add entries to dropdowns for mode and orientation."""
-        for mode in ["Laptop (auto)", "Tablet (auto)"]:
+        if self.parent.is_laptop:
+            currmode = "Laptop"
+        else:
+            currmode = "Tablet"
+        for mode in [f"{currmode} (auto)", "Laptop", "Tablet"]:
             self.ui.modeBox.addItem(mode)
-        self.ui.modeBox.setEnabled(False)
-        for orient in ["Normal (auto)", "Left (auto)", "Right (auto)",
-                       "Invert (auto)"]:
+        self.ui.modeBox.currentIndexChanged.connect(self.mode_selected)
+        for orient in [f"{self.parent.get_orientation()} (auto)", "Normal", "Left",
+                       "Right", "Invert"]:
             self.ui.orientBox.addItem(orient)
-        self.ui.orientBox.setEnabled(False)
+
+    def mode_selected(self, mode):
+        """User selected a mode (laptop, tablet, auto) from the dropdown."""
+        print(f"got mode {mode}")
+        if mode == 0:
+            self.parent.unset_mode()
+        elif mode == 1:
+            self.parent.force_mode(True)
+        elif mode == 2:
+            self.parent.force_mode(False)
 
     def buttonPress(self, button):
         """A button is pressed in the button box
