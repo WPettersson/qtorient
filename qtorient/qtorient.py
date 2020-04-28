@@ -347,6 +347,9 @@ class CoreApp(QApplication):
                         'Coordinate Transformation Matrix', ] +
                        [str(n) for n in matrix],
                        env=self.env)
+            check_call(['xinput', '--map-to-output', touchscreen,
+                        self.output],
+                        env=self.env)
         self._orientation = orientation
         if self._settings:
             self._settings.set_orientation(orientation)
